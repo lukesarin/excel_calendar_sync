@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js"></script>
+<style>
+  :root{
+    --bg:#0A0A0A;
+    --border:#2A2A2A;
+    --text:#F5F0EA;
+    --text-dim:#7A7A75;
+    --live:#4CAF6D;
+  }
+  *{box-sizing:border-box; user-select:none;}
+  body{
+    margin:0;
+    background-color:#0D0D0C;
+    background-image:
+      linear-gradient(rgba(245,240,234,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(245,240,234,0.035) 1px, transparent 1px),
+      radial-gradient(rgba(245,240,234,0.05) 1.5px, transparent 1.5px);
+    background-size: 64px 64px, 64px 64px, 64px 64px;
+    background-position: 0 0, 0 0, 32px 32px;
+    color:var(--text);
+    font-family:'IBM Plex Sans',sans-serif;
+    min-height:100vh;
+    padding:32px 20px 140px;
+  }
+  a{ color:var(--text-dim); text-decoration:none; font-family:'IBM Plex Mono',monospace; font-size:12px; }
+  a:hover{ color:var(--text); }
+
+  .topbar{
+    max-width:900px;
+    margin:0 auto 28px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .month-nav{
+    display:flex;
+    align-items:center;
+    gap:18px;
+  }
+  .month-nav button{
+    background:transparent;
+    border:1px solid var(--border);
+    color:var(--text);
+    width:30px; height:30px;
+    border-radius:50%;
+    cursor:pointer;
+    font-size:14px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .month-nav button:hover{ border-color:var(--text-dim); }
+  .month-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:14px;
+    letter-spacing:0.02em;
+    min-width:150px;
+    text-align:center;
+  }
+
+  .grid-panel{
+    max-width:900px;
+    margin:0 auto;
+    background:#000;
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:20px;
+  }
+  .weekday-row{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    margin-bottom:8px;
+  }
+  .weekday-row div{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    text-align:center;
+    padding:4px 0;
+  }
+  .day-grid{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:4px;
+  }
+  .day-cell{
+    aspect-ratio:1;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:8px;
+    cursor:pointer;
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    transition:background 0.1s, border-color 0.1s;
+  }
+  .day-cell.other-month{ opacity:0.25; cursor:default; }
+  .day-cell:not(.other-month):hover{ border-color:var(--text-dim); }
+  .day-cell.selected{
+    background:rgba(76,175,109,0.12);
+    border-color:var(--live);
+  }
+  .day-num{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .day-cell.selected .day-num{ color:var(--text); }
+  .event-dots{
+    display:flex;
+    gap:3px;
+    flex-wrap:wrap;
+  }
+  .event-dots span{
+    width:5px; height:5px;
+    border-radius:50%;
+    background:var(--text-dim);
+  }
+  .day-cell.selected .event-dots span{ background:var(--live); }
+
+  #signinPrompt{
+    max-width:900px;
+    margin:0 auto 20px;
+    text-align:center;
+  }
+  #signinPrompt button{
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:14px;
+    padding:10px 18px;
+    border-radius:20px;
+    border:1px solid var(--border);
+    background:transparent;
+    color:var(--text);
+    cursor:pointer;
+  }
+  #notPaired{
+    max-width:900px;
+    margin:60px auto;
+    text-align:center;
+    color:var(--text-dim);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    line-height:1.8;
+  }
+
+  .action-bar{
+    position:fixed;
+    left:50%;
+    bottom:24px;
+    transform:translate(-50%, 140%);
+    transition:transform 0.2s ease;
+    background:#111;
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:16px 20px;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:12px;
+    max-width:92vw;
+    box-shadow:0 12px 40px rgba(0,0,0,0.5);
+  }
+  .action-bar.open{ transform:translate(-50%, 0); }
+  .action-bar .count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--live);
+    margin-right:6px;
+  }
+  .action-bar button, .action-bar input{
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:13px;
+    padding:8px 12px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:transparent;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .action-bar input{ cursor:text; width:64px; }
+  .action-bar input[type=text]{ width:160px; }
+  .action-bar button:hover{ border-color:var(--text-dim); }
+  .action-bar button.danger:hover{ border-color:#c85a5a; color:#e08080; }
+  .action-bar .sep{ width:1px; height:20px; background:var(--border); }
+  #actionStatus{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-dim);
+    width:100%;
+    text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="index.html">&larr; home</a>
+  <div class="month-nav">
+    <button id="prevMonth">&lsaquo;</button>
+    <div class="month-label" id="monthLabel">-</div>
+    <button id="nextMonth">&rsaquo;</button>
+  </div>
+  <div style="width:60px;"></div>
+</div>
+
+<div id="signinPrompt">
+  <button id="signinBtn">Sign in with Microsoft</button>
+</div>
+
+<div id="notPaired" style="display:none;">
+  No calendar paired yet.<br><a href="index.html">Go pair one &rarr;</a>
+</div>
+
+<div class="grid-panel" id="gridPanel" style="display:none;">
+  <div class="weekday-row">
+    <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+  </div>
+  <div class="day-grid" id="dayGrid"></div>
+</div>
+
+<div class="action-bar" id="actionBar">
+  <span class="count" id="selCount">0 selected</span>
+  <input type="number" id="moveDays" value="1" min="1">
+  <button id="moveBack">&larr; move back</button>
+  <button id="moveFwd">move forward &rarr;</button>
+  <div class="sep"></div>
+  <input type="text" id="noteText" placeholder="add note to all...">
+  <button id="applyNote">apply</button>
+  <div class="sep"></div>
+  <button class="danger" id="deleteAll">delete all</button>
+  <div class="sep"></div>
+  <button id="clearSel">clear</button>
+  <div id="actionStatus"></div>
+</div>
+
+<script>
+const msalConfig = {
+  auth: {
+    clientId: "aa637561-684f-436c-8177-e6e8d65a8c31",
+    authority: "https://login.microsoftonline.com/common",
+    redirectUri: window.location.href
+  }
+};
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+const scopes = ["Calendars.ReadWrite"];
+
+let accessToken = null;
+let calendarId = null;
+let current = new Date();
+current.setDate(1);
+let eventsByDay = {}; // "YYYY-MM-DD" -> [event, ...]
+let selectedDays = new Set(); // "YYYY-MM-DD"
+let dragging = false;
+let dragAnchor = null;
+
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+async function getToken() {
+  const account = msalInstance.getActiveAccount();
+  const result = await msalInstance.acquireTokenSilent({ scopes, account });
+  accessToken = result.accessToken;
+  return accessToken;
+}
+
+async function graphFetch(path, options = {}) {
+  await getToken();
+  const res = await fetch("https://graph.microsoft.com/v1.0" + path, {
+    ...options,
+    headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json", ...(options.headers||{}) }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+async function findPairedCalendar() {
+  const funcUrl = localStorage.getItem("funcUrl");
+  if (!funcUrl) return null;
+  try {
+    const res = await fetch(`${funcUrl.replace(/\/$/,"")}/api/getConfig`);
+    const data = await res.json();
+    return data.paired ? data.calendarId : null;
+  } catch (e) { return null; }
+}
+
+$("signinBtn").onclick = async () => {
+  try {
+    const result = await msalInstance.loginPopup({ scopes });
+    msalInstance.setActiveAccount(result.account);
+    calendarId = await findPairedCalendar();
+    if (!calendarId) {
+      $("signinPrompt").style.display = "none";
+      $("notPaired").style.display = "block";
+      return;
+    }
+    $("signinPrompt").style.display = "none";
+    $("gridPanel").style.display = "block";
+    await loadMonth();
+  } catch (e) {
+    alert("Sign-in failed: " + e.message);
+  }
+};
+
+function monthLabel(d) {
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+async function loadMonth() {
+  $("monthLabel").textContent = monthLabel(current);
+  const gridStart = new Date(current.getFullYear(), current.getMonth(), 1);
+  gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+  const gridEnd = new Date(gridStart);
+  gridEnd.setDate(gridEnd.getDate() + 42);
+
+  const startISO = gridStart.toISOString();
+  const endISO = gridEnd.toISOString();
+
+  eventsByDay = {};
+  let path = `/me/calendars/${calendarId}/calendarView?startDateTime=${startISO}&endDateTime=${endISO}&$select=id,subject,start,end,body&$top=100`;
+  while (path) {
+    const data = await graphFetch(path.startsWith("http") ? path.replace("https://graph.microsoft.com/v1.0","") : path);
+    data.value.forEach(ev => {
+      const d = new Date(ev.start.dateTime + "Z");
+      const key = dateKey(d);
+      if (!eventsByDay[key]) eventsByDay[key] = [];
+      eventsByDay[key].push(ev);
+    });
+    path = data["@odata.nextLink"] || null;
+  }
+
+  renderGrid(gridStart);
+}
+
+function renderGrid(gridStart) {
+  const grid = $("dayGrid");
+  grid.innerHTML = "";
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart);
+    d.setDate(d.getDate() + i);
+    const key = dateKey(d);
+    const isOtherMonth = d.getMonth() !== current.getMonth();
+
+    const cell = document.createElement("div");
+    cell.className = "day-cell" + (isOtherMonth ? " other-month" : "");
+    cell.dataset.key = key;
+    if (selectedDays.has(key)) cell.classList.add("selected");
+
+    const num = document.createElement("div");
+    num.className = "day-num";
+    num.textContent = d.getDate();
+    cell.appendChild(num);
+
+    const dots = document.createElement("div");
+    dots.className = "event-dots";
+    const evs = eventsByDay[key] || [];
+    evs.slice(0, 6).forEach(() => {
+      const dot = document.createElement("span");
+      dots.appendChild(dot);
+    });
+    cell.appendChild(dots);
+
+    if (!isOtherMonth) {
+      cell.addEventListener("pointerdown", (e) => onCellDown(e, key));
+      cell.addEventListener("pointerenter", () => onCellEnter(key));
+    }
+    grid.appendChild(cell);
+  }
+}
+
+function onCellDown(e, key) {
+  dragging = true;
+  dragAnchor = key;
+  if (e.metaKey || e.ctrlKey) {
+    // toggle individual day, keep existing selection
+    if (selectedDays.has(key)) selectedDays.delete(key);
+    else selectedDays.add(key);
+  } else {
+    selectedDays = new Set([key]);
+  }
+  refreshSelectionVisual();
+}
+
+function onCellEnter(key) {
+  if (!dragging) return;
+  // only extend range for plain drag (not modifier-click toggling)
+  const allKeys = Array.from(document.querySelectorAll(".day-cell:not(.other-month)")).map(c => c.dataset.key);
+  const startIdx = allKeys.indexOf(dragAnchor);
+  const curIdx = allKeys.indexOf(key);
+  if (startIdx === -1 || curIdx === -1) return;
+  const [lo, hi] = startIdx < curIdx ? [startIdx, curIdx] : [curIdx, startIdx];
+  selectedDays = new Set(allKeys.slice(lo, hi + 1));
+  refreshSelectionVisual();
+}
+
+document.addEventListener("pointerup", () => { dragging = false; });
+
+function refreshSelectionVisual() {
+  document.querySelectorAll(".day-cell").forEach(c => {
+    c.classList.toggle("selected", selectedDays.has(c.dataset.key));
+  });
+  $("selCount").textContent = `${selectedDays.size} day${selectedDays.size===1?"":"s"} selected`;
+  $("actionBar").classList.toggle("open", selectedDays.size > 0);
+}
+
+$("clearSel").onclick = () => { selectedDays = new Set(); refreshSelectionVisual(); };
+
+function selectedEvents() {
+  let evs = [];
+  selectedDays.forEach(key => { evs = evs.concat(eventsByDay[key] || []); });
+  return evs;
+}
+
+function setActionStatus(msg) { $("actionStatus").textContent = msg; }
+
+async function moveSelected(deltaDays) {
+  const evs = selectedEvents();
+  if (!evs.length) { setActionStatus("No events in the selected days."); return; }
+  setActionStatus(`Moving ${evs.length} event(s)...`);
+  let ok = 0, fail = 0;
+  for (const ev of evs) {
+    try {
+      const newStart = new Date(ev.start.dateTime + "Z");
+      newStart.setUTCDate(newStart.getUTCDate() + deltaDays);
+      const newEnd = new Date(ev.end.dateTime + "Z");
+      newEnd.setUTCDate(newEnd.getUTCDate() + deltaDays);
+      await graphFetch(`/me/events/${ev.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          start: { dateTime: newStart.toISOString().slice(0,19), timeZone: "UTC" },
+          end: { dateTime: newEnd.toISOString().slice(0,19), timeZone: "UTC" }
+        })
+      });
+      ok++;
+    } catch (e) { fail++; }
+  }
+  setActionStatus(`Moved ${ok} event(s).` + (fail ? ` ${fail} failed.` : ""));
+  selectedDays = new Set();
+  await loadMonth();
+  refreshSelectionVisual();
+}
+
+$("moveFwd").onclick = () => moveSelected(parseInt($("moveDays").value || "1", 10));
+$("moveBack").onclick = () => moveSelected(-parseInt($("moveDays").value || "1", 10));
+
+$("applyNote").onclick = async () => {
+  const note = $("noteText").value.trim();
+  if (!note) { setActionStatus("Type a note first."); return; }
+  const evs = selectedEvents();
+  if (!evs.length) { setActionStatus("No events in the selected days."); return; }
+  setActionStatus(`Applying note to ${evs.length} event(s)...`);
+  let ok = 0, fail = 0;
+  for (const ev of evs) {
+    try {
+      const existing = ev.body && ev.body.content ? ev.body.content : "";
+      await graphFetch(`/me/events/${ev.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ body: { contentType: "text", content: existing + "\n" + note } })
+      });
+      ok++;
+    } catch (e) { fail++; }
+  }
+  setActionStatus(`Updated ${ok} event(s).` + (fail ? ` ${fail} failed.` : ""));
+  await loadMonth();
+};
+
+$("deleteAll").onclick = async () => {
+  const evs = selectedEvents();
+  if (!evs.length) { setActionStatus("No events in the selected days."); return; }
+  if (!confirm(`Delete ${evs.length} event(s) from ${selectedDays.size} day(s)? This can't be undone.`)) return;
+  setActionStatus(`Deleting ${evs.length} event(s)...`);
+  let ok = 0, fail = 0;
+  for (const ev of evs) {
+    try {
+      await graphFetch(`/me/events/${ev.id}`, { method: "DELETE" });
+      ok++;
+    } catch (e) { fail++; }
+  }
+  setActionStatus(`Deleted ${ok} event(s).` + (fail ? ` ${fail} failed.` : ""));
+  selectedDays = new Set();
+  await loadMonth();
+  refreshSelectionVisual();
+};
+
+$("prevMonth").onclick = async () => {
+  current.setMonth(current.getMonth() - 1);
+  selectedDays = new Set();
+  await loadMonth();
+  refreshSelectionVisual();
+};
+$("nextMonth").onclick = async () => {
+  current.setMonth(current.getMonth() + 1);
+  selectedDays = new Set();
+  await loadMonth();
+  refreshSelectionVisual();
+};
+
+$("monthLabel").textContent = monthLabel(current);
+</script>
+</body>
+</html>
